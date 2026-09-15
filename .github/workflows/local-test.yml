@@ -1,0 +1,49 @@
+name: Local test build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Local test build
+    strategy:
+      matrix:
+        include:
+          - platform: 2
+            platform_name: ios
+
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Checkout repository submodules
+        run: git submodule update --init --recursive
+
+      # ldid (ad-hoc signing) and gmake normally come from Procursus on the
+      # maintainer's own machine, which isn't present on a fresh
+      # GitHub-hosted runner - install it via Homebrew instead.
+      # Real JDK 8 is also required unconditionally
+      - name: Install ldid, gmake, and real JDK 8
+        run: |
+          brew install ldid make
+          brew install --cask temurin@8
+          echo "BOOTJDK=/Library/Java/JavaVirtualMachines/temurin-8.jdk/Contents/Home/bin" >> $GITHUB_ENV
+
+      # development.yml never fetches JREs at all, implying they're
+      # pre-cached on the self-hosted machine.
+      # JREs can also no longer be fetched from CI here, since the upstream
+      # Actions artifacts have expired and the release assets don't
+      # reliably include iOS builds.
+      #
+      # JRE's should instead be manually added to source repo in depends/.
+      - name: Build for ${{ matrix.platform_name }}
+        run: |
+          export PATH=/opt/homebrew/bin:$PATH
+          gmake -j$(sysctl -n hw.ncpu) package PLATFORM=${{ matrix.platform }} BOOTJDK="$BOOTJDK"
+
+      - name: Upload ipa
+        uses: actions/upload-artifact@main
+        with:
+          name: org.angelauramc.amethyst-${{ matrix.platform_name }}.ipa
+          path: artifacts/org.angelauramc.amethyst-*-${{ matrix.platform_name }}.ipa
